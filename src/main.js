@@ -318,7 +318,7 @@ function level_Blocker() {
   const exit = { x: 1*TILE, y: (lv.height-2)*TILE - 2*TILE, w: TILE, h: 2*TILE };
   return {
     name:'Level 1 – Blocker', ...lv,
-    spawn:{ x:3*TILE+8, y:7*TILE-1 },
+    spawn:{ x:3*TILE+8, y:(lv.height-2)*TILE-1 },
     exit,
     total:10, goal:5, time:60,
     jobs:{ blocker:5, builder:0, digger:0, basher:0, floater:0 }
@@ -348,7 +348,7 @@ function level_Builder() {
   const exit = { x: 18*TILE, y:(lv.height-2)*TILE - 2*TILE, w:TILE,h:2*TILE };
   return {
     name:'Level 3 – Builder', ...lv,
-    spawn:{ x:3*TILE+8, y:7*TILE-1 },
+    spawn:{ x:3*TILE+8, y:(lv.height-2)*TILE-1 },
     exit,
     total:10, goal:6, time:90,
     jobs:{ blocker:0, builder:8, digger:0, basher:0, floater:0 }
@@ -364,7 +364,7 @@ function level_Basher() {
   const exit = { x: 22*TILE, y:(lv.height-2)*TILE - 2*TILE, w:TILE,h:2*TILE };
   return {
     name:'Level 4 – Basher', ...lv,
-    spawn:{ x:3*TILE+8, y:7*TILE-1 },
+    spawn:{ x:3*TILE+8, y:(lv.height-2)*TILE-1 },
     exit,
     total:10, goal:6, time:90,
     jobs:{ blocker:0, builder:0, digger:0, basher:6, floater:0 }
@@ -458,12 +458,16 @@ function updateLoochie(l, dt) {
   } else {
     // align to ground grid to reduce sinking
     while (solidAt(l.x, l.y)) l.y -= 0.5;
-    // check fall damage
-    if (!l.hasFloater && l.y - l.fallStartY > 26) { // splat for high falls
-      l.markedForRemoval = true;
-      state.lost++;
-      audio.play('fall');
-      return;
+    // check fall damage only after they've landed once before
+    const justLanded = l.vy > 0;
+    if (justLanded) {
+      if (l.landedOnce && !l.hasFloater && l.y - l.fallStartY > 26) {
+        l.markedForRemoval = true;
+        state.lost++;
+        audio.play('fall');
+        return;
+      }
+      l.landedOnce = true; // first safe landing sets this
     }
     l.vy = 0;
     // move horizontally
