@@ -55,10 +55,54 @@ const sprites = {
   loaded: false,
   cellW: 0,
   cellH: 0,
+  crops: {} // by key: 'walker','blocker'
 };
 sprites.img.onload = () => {
   sprites.cellW = Math.floor(sprites.img.width / 3);
   sprites.cellH = Math.floor(sprites.img.height / 2);
+  // compute tight crops for top row cells (exclude bottom icons)
+  const computeCrop = (col, row) => {
+    const cellW = sprites.cellW;
+    const cellH = sprites.cellH;
+    const sx = col * cellW;
+    const sy = row * cellH;
+    const topH = Math.floor(cellH * 0.7); // ignore bottom 30% (job icon area)
+    const off = document.createElement('canvas');
+    off.width = cellW;
+    off.height = topH;
+    const octx = off.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(sprites.img, sx, sy, cellW, topH, 0, 0, cellW, topH);
+    const img = octx.getImageData(0, 0, cellW, topH).data;
+    let minX = cellW, minY = topH, maxX = 0, maxY = 0;
+    for (let y = 0; y < topH; y++) {
+      for (let x = 0; x < cellW; x++) {
+        const i = (y * cellW + x) * 4;
+        const r = img[i], g = img[i + 1], b = img[i + 2], a = img[i + 3];
+        const bright = r + g + b;
+        if (a > 10 && bright > 30) { // treat near-black as background
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    // if scan failed for any reason, fall back to centered area
+    if (maxX <= minX || maxY <= minY) {
+      const pad = 160;
+      return { sx: sx + (cellW - pad) / 2, sy: sy + 40, sw: pad, sh: pad };
+    }
+    // add padding
+    const pad = 6;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(cellW - 1, maxX + pad);
+    maxY = Math.min(topH - 1, maxY + pad);
+    return { sx: sx + minX, sy: sy + minY, sw: maxX - minX + 1, sh: maxY - minY + 1 };
+  };
+  sprites.crops.walker = computeCrop(0, 0);
+  sprites.crops.blocker = computeCrop(1, 0);
   sprites.loaded = true;
 };
 sprites.img.src = 'assets/loochies-art.png';
@@ -270,22 +314,13 @@ function drawLoochie(l) {
 
   // choose sprite
   if (sprites.loaded) {
-    const cellW = sprites.cellW;
-    const cellH = sprites.cellH;
-    // source cell: walker (0,0) or blocker (1,0)
-    let sx = 0;
-    let sy = 0;
-    if (l.state === 'block') {
-      sx = cellW * 1; sy = 0;
-    } else {
-      sx = cellW * 0; sy = 0;
-    }
+    const crop = l.state === 'block' ? sprites.crops.blocker : sprites.crops.walker;
     // simple bob animation for walker
     let bob = 0;
     if (l.state !== 'block') bob = Math.sin((l.frame % 60) / 60 * Math.PI * 2) > 0 ? 0 : 1;
-    // desired on-screen size (keep collision size independent)
-    const destH = 18 + bob;
-    const aspect = cellW / cellH;
+    // desired on-screen size around 36-40px tall
+    const destH = 38 + bob;
+    const aspect = crop.sw / crop.sh;
     const destW = Math.round(destH * aspect);
     const dx = Math.round(px - destW / 2);
     const dy = Math.round(py - destH);
@@ -294,9 +329,9 @@ function drawLoochie(l) {
       ctx.translate(px, 0);
       ctx.scale(-1, 1);
       ctx.translate(-px, 0);
-      ctx.drawImage(sprites.img, sx, sy, cellW, cellH, Math.round(px - (px - dx) - destW), dy, destW, destH);
+      ctx.drawImage(sprites.img, crop.sx, crop.sy, crop.sw, crop.sh, Math.round(px - (px - dx) - destW), dy, destW, destH);
     } else {
-      ctx.drawImage(sprites.img, sx, sy, cellW, cellH, dx, dy, destW, destH);
+      ctx.drawImage(sprites.img, crop.sx, crop.sy, crop.sw, crop.sh, dx, dy, destW, destH);
     }
     ctx.restore();
   } else {
@@ -400,7 +435,7 @@ function draw() {
   // HUD overlay inside canvas: exit and spawn labels
   ctx.fillStyle = '#fff';
   ctx.font = '8px monospace';
-  ctx.fillText('EXIT', level1.exit.x - 2, level1.exit.y - 2);
+  ctx.fillText('EXIT', level1.exit.x + level1.exit.w + 4, level1.exit.y + 10);
 }
 
 function setupLevel() {
