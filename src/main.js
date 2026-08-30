@@ -1,5 +1,5 @@
 // Loochies - tiny playable slice (walk + Blocker + one level)
-// Pixel-art is rendered procedurally to avoid binary sprite assets.
+// Uses provided sprite sheet (assets/loochies-art.png)
 
 const VIRTUAL_W = 320;
 const VIRTUAL_H = 180;
@@ -49,6 +49,20 @@ function fitCanvas() {
 let ctx = fitCanvas();
 window.addEventListener('resize', () => (ctx = fitCanvas()));
 
+// ---- Sprites: 3 columns x 2 rows sheet (top: walker, blocker, builder; bottom: digger, basher, floater)
+const sprites = {
+  img: new Image(),
+  loaded: false,
+  cellW: 0,
+  cellH: 0,
+};
+sprites.img.onload = () => {
+  sprites.cellW = Math.floor(sprites.img.width / 3);
+  sprites.cellH = Math.floor(sprites.img.height / 2);
+  sprites.loaded = true;
+};
+sprites.img.src = 'assets/loochies-art.png';
+
 // Simple tile map for ground/platforms. 0 = empty, 1 = ground, 2 = wall
 function createEmptyMap(w, h) {
   return new Array(h).fill(0).map(() => new Array(w).fill(0));
@@ -60,7 +74,8 @@ const level1 = {
   height: Math.floor(VIRTUAL_H / TILE),
   map: null,
   spawn: { x: 2 * TILE + 8, y: 7 * TILE - 1 }, // slightly above ground
-  exit: { x: 1 * TILE, y: 6 * TILE, w: TILE, h: 2 * TILE },
+  // Exit bottom should sit on the ground (top of ground is row height-2)
+  exit: { x: 1 * TILE, y: 0, w: TILE, h: 2 * TILE },
   pitX: 10, // tiles
 };
 level1.map = createEmptyMap(level1.width, level1.height);
@@ -69,6 +84,8 @@ for (let x = 0; x < level1.width; x++) {
   level1.map[level1.height - 2][x] = 1;
   level1.map[level1.height - 1][x] = 1;
 }
+// place exit now that we know height
+level1.exit.y = (level1.height - 2) * TILE - level1.exit.h;
 // walls at edges
 for (let y = 0; y < level1.height; y++) {
   level1.map[y][0] = 2;
@@ -247,102 +264,49 @@ function drawLoochie(l) {
   const px = Math.round(l.x);
   const py = Math.round(l.y);
   const facing = l.dir;
-  const f = l.frame % 4;
-  const sx = px - 8;
-  const sy = py - 16;
   // base shadow
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.fillRect(px - 5, py - 2, 10, 2);
 
-  if (l.state === 'block') {
-    drawGirlPoseBlocker(sx, sy, facing);
+  // choose sprite
+  if (sprites.loaded) {
+    const cellW = sprites.cellW;
+    const cellH = sprites.cellH;
+    // source cell: walker (0,0) or blocker (1,0)
+    let sx = 0;
+    let sy = 0;
+    if (l.state === 'block') {
+      sx = cellW * 1; sy = 0;
+    } else {
+      sx = cellW * 0; sy = 0;
+    }
+    // simple bob animation for walker
+    let bob = 0;
+    if (l.state !== 'block') bob = Math.sin((l.frame % 60) / 60 * Math.PI * 2) > 0 ? 0 : 1;
+    // desired on-screen size (keep collision size independent)
+    const destH = 18 + bob;
+    const aspect = cellW / cellH;
+    const destW = Math.round(destH * aspect);
+    const dx = Math.round(px - destW / 2);
+    const dy = Math.round(py - destH);
+    ctx.save();
+    if (facing < 0) {
+      ctx.translate(px, 0);
+      ctx.scale(-1, 1);
+      ctx.translate(-px, 0);
+      ctx.drawImage(sprites.img, sx, sy, cellW, cellH, Math.round(px - (px - dx) - destW), dy, destW, destH);
+    } else {
+      ctx.drawImage(sprites.img, sx, sy, cellW, cellH, dx, dy, destW, destH);
+    }
+    ctx.restore();
   } else {
-    drawGirlPoseWalk(sx, sy, facing, f);
+    // Fallback: simple rectangle if image not loaded yet
+    ctx.fillStyle = '#2cbf6b';
+    ctx.fillRect(px - 5, py - 14, 10, 14);
   }
 }
 
-// Procedural pixel art for the brunette girl in a green dress
-const COLORS = {
-  hair: '#6b3b2a',
-  hairDark: '#4a261a',
-  skin: '#f1c6a8',
-  dress: '#2cbf6b',
-  dressDark: '#199453',
-  shoe: '#4a2e1f',
-  eye: '#2b1a12'
-};
-function p(x, y, c) {
-  ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1);
-}
-function mirror(left, rightOriginX) {
-  return rightOriginX - (left - rightOriginX) - 1;
-}
-function drawGirlHead(x, y, flip) {
-  // simple 12x8 head + hair
-  for (let i = 0; i < 12; i++) {
-    p(x + (flip ? 11 - i : i), y, COLORS.hairDark);
-  }
-  // hair volume
-  for (let yy = 1; yy <= 4; yy++) {
-    for (let xx = 0; xx < 12; xx++) {
-      p(x + (flip ? 11 - xx : xx), y + yy, COLORS.hair);
-    }
-  }
-  // face
-  for (let yy = 3; yy <= 6; yy++) {
-    for (let xx = 2; xx <= 9; xx++) {
-      p(x + (flip ? 11 - xx : xx), y + yy, COLORS.skin);
-    }
-  }
-  // eyes
-  p(x + (flip ? 11 - 4 : 4), y + 5, COLORS.eye);
-  // tiny smile
-  p(x + (flip ? 11 - 6 : 6), y + 6, COLORS.hairDark);
-}
-function drawGirlBody(x, y, flip) {
-  // dress
-  for (let yy = 0; yy < 6; yy++) {
-    for (let xx = 2; xx < 10; xx++) {
-      p(x + (flip ? 11 - xx : xx), y + yy, yy < 2 ? COLORS.dress : COLORS.dressDark);
-    }
-  }
-  // legs
-  for (let xx = 3; xx <= 4; xx++) p(x + (flip ? 11 - xx : xx), y + 6, COLORS.skin);
-  for (let xx = 7; xx <= 8; xx++) p(x + (flip ? 11 - xx : xx), y + 6, COLORS.skin);
-}
-function drawGirlFeet(x, y, flip, stepLeft, stepRight) {
-  // shoes, stepLeft / stepRight is -1..1 offset
-  p(x + (flip ? 11 - 3 : 3), y + 8 + stepLeft, COLORS.shoe);
-  p(x + (flip ? 11 - 8 : 8), y + 8 + stepRight, COLORS.shoe);
-}
-function drawGirlPoseWalk(x, y, facing, frame) {
-  const flip = facing < 0;
-  drawGirlHead(x + 2, y, flip);
-  drawGirlBody(x + 2, y + 8, flip);
-  const steps = [
-    [0, 1],
-    [1, 0],
-    [0, -1],
-    [1, 0],
-  ];
-  const [sl, sr] = steps[frame];
-  drawGirlFeet(x + 2, y + 8, flip, sl, sr);
-  // little arm swish
-  p(x + (flip ? 11 - 2 : 2), y + 11, COLORS.skin);
-  p(x + (flip ? 11 - 9 : 9), y + 11, COLORS.skin);
-}
-function drawGirlPoseBlocker(x, y, facing) {
-  const flip = facing < 0;
-  drawGirlHead(x + 2, y, flip);
-  drawGirlBody(x + 2, y + 8, flip);
-  // feet planted
-  drawGirlFeet(x + 2, y + 8, flip, 0, 0);
-  // arms out
-  for (let i = 0; i < 3; i++) {
-    p(x + (flip ? 11 - (1 + i) : 1 + i), y + 10, COLORS.skin);
-    p(x + (flip ? 11 - (10 - i) : 10 - i), y + 10, COLORS.skin);
-  }
-}
+// (Old procedural pixel art kept in git history; now drawing from sheet)
 
 function drawUI() {
   const txt = `Saved ${state.saved}/${state.total}  Goal ${state.goal}  Time ${Math.ceil(state.timeLeft)}s`;
