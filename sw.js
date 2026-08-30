@@ -1,7 +1,8 @@
 /* Loochies Service Worker
- * v6: bump cache, network-first for HTML/JS, never cache sw.js
+ * v7: bump cache, network-first for HTML/JS, never cache sw.js
+ *     Runtime-cache sound files when they exist.
  */
-const CACHE_NAME = 'loochies-v6';
+const CACHE_NAME = 'loochies-v7';
 const OFFLINE_URLS = [
   './',
   './index.html',
@@ -36,6 +37,7 @@ self.addEventListener('fetch', (event) => {
   const accept = req.headers.get('accept') || '';
   const isHTML = req.mode === 'navigate' || accept.includes('text/html');
   const isJS = url.pathname.endsWith('.js') || (event.request.destination === 'script');
+  const isSound = url.pathname.includes('/assets/sounds/');
 
   // Network-first for HTML and JS so updates are seen immediately.
   if (isHTML || isJS) {
@@ -59,13 +61,17 @@ self.addEventListener('fetch', (event) => {
   // Cache-first for static assets
   event.respondWith(
     caches.match(req).then((cached) => {
-      if (cached) return cached;
+      if (cached && !isSound) return cached;
       return fetch(req).then((resp) => {
         if (req.method === 'GET' && url.origin === location.origin) {
           const copy = resp.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(()=>{});
         }
         return resp;
+      }).catch(async () => {
+        const fallback = await caches.match(req);
+        if (fallback) return fallback;
+        throw new Error('Offline');
       });
     })
   );
