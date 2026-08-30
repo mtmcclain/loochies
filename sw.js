@@ -1,7 +1,7 @@
 /* Loochies Service Worker
- * v4: bump cache, network-first for HTML/JS, never cache sw.js
+ * v5: bump cache, network-first for HTML/JS, never cache sw.js
  */
-const CACHE_NAME = 'loochies-v4';
+const CACHE_NAME = 'loochies-v5';
 const OFFLINE_URLS = [
   './',
   './index.html',

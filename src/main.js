@@ -125,6 +125,39 @@ sprites.img.onload = () => {
   };
   sprites.canvases.walker = makeTransparent(sprites.crops.walker);
   sprites.canvases.blocker = makeTransparent(sprites.crops.blocker);
+  // Derive 4-frame walk cycle by nudging leg halves and slight lean
+  const base = sprites.canvases.walker;
+  const W = base.width, H = base.height;
+  const midX = Math.floor(W / 2);
+  const legY = Math.floor(H * 0.6);
+  const makeStep = (leftDown) => {
+    const oc = document.createElement('canvas');
+    oc.width = W + 2; oc.height = H + 2;
+    const o = oc.getContext('2d');
+    o.imageSmoothingEnabled = false;
+    // slight lean
+    const lean = leftDown ? -0.02 : 0.02; // radians
+    o.translate((W + 2) / 2, H);
+    o.rotate(lean);
+    o.translate(-(W + 2) / 2, -H);
+    // torso
+    o.drawImage(base, 0, 0, W, legY, 1, 0, W, legY);
+    // legs split
+    const up = -1, down = 1;
+    // left leg
+    o.drawImage(base, 0, legY, midX, H - legY, 1, legY + (leftDown ? down : up), midX, H - legY);
+    // right leg
+    o.drawImage(base, midX, legY, W - midX, H - legY, 1 + midX, legY + (leftDown ? up : down), W - midX, H - legY);
+    return oc;
+  };
+  sprites.frames = {
+    walker: [
+      makeStep(true),
+      makeStep(false),
+      makeStep(true),
+      makeStep(false),
+    ]
+  };
   sprites.loaded = true;
 };
 sprites.img.src = 'assets/loochies-art.png';
@@ -139,10 +172,10 @@ const level1 = {
   width: Math.floor(VIRTUAL_W / TILE),
   height: Math.floor(VIRTUAL_H / TILE),
   map: null,
-  spawn: { x: 2 * TILE + 8, y: 7 * TILE - 1 }, // slightly above ground
+  spawn: { x: 3 * TILE + 8, y: 7 * TILE - 1 }, // slightly above ground, more runway
   // Exit bottom should sit on the ground (top of ground is row height-2)
   exit: { x: 1 * TILE, y: 0, w: TILE, h: 2 * TILE },
-  pitX: 10, // tiles
+  pitX: 14, // tiles (further right to give time before the fall)
 };
 level1.map = createEmptyMap(level1.width, level1.height);
 for (let x = 0; x < level1.width; x++) {
@@ -174,8 +207,10 @@ class Loochie {
     this.state = 'walk'; // 'walk' | 'fall' | 'block'
     this.width = 10;
     this.height = 14;
-    this.frame = 0;
+    this.frame = 0; // legacy counter
     this.frameTick = 0;
+    this.animT = 0;
+    this.animFrame = 0;
     this.markedForRemoval = false;
   }
   get rect() {
@@ -193,7 +228,10 @@ const world = {
 function tileAt(px, py) {
   const tx = Math.floor(px / TILE);
   const ty = Math.floor(py / TILE);
-  if (tx < 0 || ty < 0 || tx >= level1.width || ty >= level1.height) return 2; // treat out-of-range as wall
+  // Treat sides as walls, air above/below as empty so pits are falls
+  if (tx < 0 || tx >= level1.width) return 2;
+  if (ty < 0) return 0;
+  if (ty >= level1.height) return 0;
   return level1.map[ty][tx];
 }
 function solidAt(px, py) {
@@ -205,7 +243,7 @@ function intersects(a, b) {
   return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
 }
 
-function updateLoochie(l) {
+function updateLoochie(l, dt) {
   // Blocker has no movement
   if (l.state === 'block') return;
 
@@ -257,9 +295,18 @@ function updateLoochie(l) {
     state.saved++;
   }
 
-  // animate
-  l.frameTick = (l.frameTick + 1) % 10;
-  if (l.frameTick === 0) l.frame = (l.frame + 1) % 4;
+  // animate when moving on ground
+  const moving = onGround && Math.abs(l.vx) > 0 && l.state !== 'block';
+  if (moving) {
+    l.animT += dt;
+    if (l.animT >= 0.1) { // ~10 fps
+      l.animT -= 0.1;
+      l.animFrame = (l.animFrame + 1) % 4;
+    }
+  } else {
+    l.animT = 0;
+    l.animFrame = 0;
+  }
 }
 
 // Drawing utilities
@@ -327,8 +374,15 @@ function drawLoochie(l) {
 
   // choose sprite
   if (sprites.loaded) {
-    const c = l.state === 'block' ? sprites.canvases.blocker : sprites.canvases.walker;
-    const crop = l.state === 'block' ? sprites.crops.blocker : sprites.crops.walker;
+    let c, crop;
+    if (l.state === 'block') {
+      c = sprites.canvases.blocker; crop = sprites.crops.blocker;
+    } else {
+      const frames = sprites.frames && sprites.frames.walker ? sprites.frames.walker : [sprites.canvases.walker];
+      const idx = frames.length > 1 ? l.animFrame % frames.length : 0;
+      c = frames[idx];
+      crop = sprites.crops.walker;
+    }
     // simple bob animation for walker
     let bob = 0;
     if (l.state !== 'block') bob = Math.sin((l.frame % 60) / 60 * Math.PI * 2) > 0 ? 0 : 1;
@@ -377,13 +431,17 @@ function onPointer(e) {
   const { x, y } = screenToGame(p.clientX, p.clientY);
   // find top-most loochie within radius
   let target = null;
-  const r = 10;
   for (let i = world.loochies.length - 1; i >= 0; i--) {
     const l = world.loochies[i];
     if (l.state === 'block') continue;
-    const dx = Math.abs(l.x - x);
-    const dy = Math.abs(l.y - y);
-    if (dx <= r && dy <= r) {
+    // hit test against drawn sprite bounds (+ padding)
+    const crop = sprites.crops && sprites.crops.walker ? sprites.crops.walker : { sw: 20, sh: 30 };
+    const aspect = crop.sw / crop.sh;
+    const destH = 30; // base height
+    const destW = Math.round(destH * aspect);
+    const pad = 6;
+    const rect = { x: l.x - destW / 2 - pad, y: l.y - destH - pad, w: destW + pad * 2, h: destH + pad * 2 };
+    if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
       target = l;
       break;
     }
@@ -421,7 +479,7 @@ function step(dt) {
   if (!state.over && world.spawned < state.total) {
     world.spawnClock -= dt;
     if (world.spawnClock <= 0) {
-      world.spawnClock = 0.8;
+      world.spawnClock = 1.2; // a bit slower to allow blocker tap
       world.spawned++;
       const l = new Loochie(level1.spawn.x, level1.spawn.y);
       l.dir = 1; // walk right initially
@@ -429,7 +487,7 @@ function step(dt) {
     }
   }
   // Update loochies
-  for (const l of world.loochies) updateLoochie(l);
+  for (const l of world.loochies) updateLoochie(l, dt);
   // Cull removed
   world.loochies = world.loochies.filter((l) => !l.markedForRemoval);
   world.blockers = world.blockers.filter((b) => !b.markedForRemoval);
