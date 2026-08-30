@@ -63,6 +63,76 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', () => (ctx = fitCanvas()));
 }
 
+// ---- Audio (Web Audio API) ----
+class SoundManager {
+  constructor() {
+    this.ctx = null;
+    this.gain = null;
+    this.buffers = {}; // name -> AudioBuffer
+    this.lastPlay = {}; // name -> ms
+    this.cooldowns = { spawn: 250 }; // ms
+    this.unlocked = false;
+    this.winPlayed = false;
+  }
+  async unlock() {
+    if (this.unlocked) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return; // no audio support
+    this.ctx = new AC();
+    try { await this.ctx.resume(); } catch {}
+    this.gain = this.ctx.createGain();
+    this.gain.gain.value = 0.9;
+    this.gain.connect(this.ctx.destination);
+    this.unlocked = true;
+    // Lazy-load all known slots; missing files are fine
+    this.loadAll().catch(()=>{});
+  }
+  async loadAll() {
+    const slots = ['spawn','blocker','saved','fall','win'];
+    await Promise.all(slots.map((s) => this.loadSlot(s).catch(()=>{})));
+  }
+  async loadSlot(name) {
+    if (!this.ctx) return;
+    const exts = ['m4a','mp3','ogg','wav'];
+    for (const ext of exts) {
+      const url = `assets/sounds/${name}.${ext}`;
+      try {
+        const resp = await fetch(url, { cache: 'force-cache' });
+        if (!resp.ok) continue;
+        const data = await resp.arrayBuffer();
+        const buf = await this.ctx.decodeAudioData(data.slice(0));
+        this.buffers[name] = buf;
+        return;
+      } catch {
+        // try next extension
+      }
+    }
+    // none found; leave undefined (silent)
+  }
+  play(name) {
+    if (!this.unlocked || !this.ctx) return;
+    const buf = this.buffers[name];
+    if (!buf) return; // silent-missing
+    const now = performance.now();
+    const cd = this.cooldowns[name] || 0;
+    const last = this.lastPlay[name] || 0;
+    if (now - last < cd) return;
+    this.lastPlay[name] = now;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.gain);
+    try { src.start(); } catch {}
+  }
+}
+const audio = new SoundManager();
+// Unlock on first interaction (iPhone Safari)
+['click','touchstart','pointerdown'].forEach((ev) => {
+  document.addEventListener(ev, () => audio.unlock(), { once: true, passive: true });
+  canvas.addEventListener(ev, () => audio.unlock(), { once: true, passive: true });
+  blockerBtn.addEventListener(ev, () => audio.unlock(), { once: true, passive: true });
+  restartBtn.addEventListener(ev, () => audio.unlock(), { once: true, passive: true });
+});
+
 // ---- Sprites: 3 columns x 2 rows sheet (top: walker, blocker, builder; bottom: digger, basher, floater)
 const sprites = {
   img: new Image(),
@@ -300,6 +370,7 @@ function updateLoochie(l, dt) {
   if (l.y > VIRTUAL_H + 50) {
     l.markedForRemoval = true;
     state.lost++;
+    audio.play('fall');
   }
 
   // reached exit
@@ -307,6 +378,7 @@ function updateLoochie(l, dt) {
   if (intersects(l.rect, exitRect)) {
     l.markedForRemoval = true;
     state.saved++;
+    audio.play('saved');
   }
 
   // animate when moving on ground
@@ -466,6 +538,7 @@ function onPointer(e) {
     state.blockersRemaining--;
     state.selectedTool = 'none';
     blockerBtn.setAttribute('aria-pressed', 'false');
+    audio.play('blocker');
   }
 }
 canvas.addEventListener('click', onPointer);
@@ -498,6 +571,7 @@ function step(dt) {
       const l = new Loochie(level1.spawn.x, level1.spawn.y);
       l.dir = 1; // walk right initially
       world.loochies.push(l);
+      audio.play('spawn');
     }
   }
   // Update loochies
@@ -506,7 +580,10 @@ function step(dt) {
   world.loochies = world.loochies.filter((l) => !l.markedForRemoval);
   world.blockers = world.blockers.filter((b) => !b.markedForRemoval);
   // Win condition
-  if (!state.over && state.saved >= state.goal) state.over = true;
+  if (!state.over && state.saved >= state.goal) {
+    state.over = true;
+    audio.play('win');
+  }
   // Hard fail when none alive/spawning and not enough saved
   if (!state.over && world.spawned >= state.total && world.loochies.length === 0 && state.saved < state.goal) {
     state.over = true;
