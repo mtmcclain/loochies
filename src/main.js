@@ -55,7 +55,8 @@ const sprites = {
   loaded: false,
   cellW: 0,
   cellH: 0,
-  crops: {} // by key: 'walker','blocker'
+  crops: {}, // by key: 'walker','blocker'
+  canvases: {} // processed transparent canvases per sprite
 };
 sprites.img.onload = () => {
   sprites.cellW = Math.floor(sprites.img.width / 3);
@@ -66,7 +67,7 @@ sprites.img.onload = () => {
     const cellH = sprites.cellH;
     const sx = col * cellW;
     const sy = row * cellH;
-    const topH = Math.floor(cellH * 0.7); // ignore bottom 30% (job icon area)
+    const topH = Math.floor(cellH * 0.75); // ignore bottom icon strip
     const off = document.createElement('canvas');
     off.width = cellW;
     off.height = topH;
@@ -79,8 +80,8 @@ sprites.img.onload = () => {
       for (let x = 0; x < cellW; x++) {
         const i = (y * cellW + x) * 4;
         const r = img[i], g = img[i + 1], b = img[i + 2], a = img[i + 3];
-        const bright = r + g + b;
-        if (a > 10 && bright > 30) { // treat near-black as background
+        const isBlack = r < 8 && g < 8 && b < 8;
+        if (a > 8 && !isBlack) { // count as content (not black)
           if (x < minX) minX = x;
           if (y < minY) minY = y;
           if (x > maxX) maxX = x;
@@ -90,8 +91,8 @@ sprites.img.onload = () => {
     }
     // if scan failed for any reason, fall back to centered area
     if (maxX <= minX || maxY <= minY) {
-      const pad = 160;
-      return { sx: sx + (cellW - pad) / 2, sy: sy + 40, sw: pad, sh: pad };
+      const padW = 180, padH = 220;
+      return { sx: sx + (cellW - padW) / 2, sy: sy + 20, sw: padW, sh: padH };
     }
     // add padding
     const pad = 6;
@@ -103,6 +104,27 @@ sprites.img.onload = () => {
   };
   sprites.crops.walker = computeCrop(0, 0);
   sprites.crops.blocker = computeCrop(1, 0);
+  // Preprocess to punch out black background (alpha=0)
+  const makeTransparent = (crop) => {
+    const c = document.createElement('canvas');
+    c.width = crop.sw;
+    c.height = crop.sh;
+    const cctx = c.getContext('2d');
+    cctx.imageSmoothingEnabled = false;
+    cctx.drawImage(sprites.img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, crop.sw, crop.sh);
+    const img = cctx.getImageData(0, 0, c.width, c.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (r < 8 && g < 8 && b < 8) {
+        d[i + 3] = 0; // transparent
+      }
+    }
+    cctx.putImageData(img, 0, 0);
+    return c;
+  };
+  sprites.canvases.walker = makeTransparent(sprites.crops.walker);
+  sprites.canvases.blocker = makeTransparent(sprites.crops.blocker);
   sprites.loaded = true;
 };
 sprites.img.src = 'assets/loochies-art.png';
@@ -266,8 +288,7 @@ function drawLevel() {
   }
   // exit
   drawExit(level1.exit.x, level1.exit.y, level1.exit.w, level1.exit.h);
-  // entrance flag
-  drawEntrance(level1.spawn.x - 8, level1.spawn.y - 20);
+  // no entrance marker
 }
 
 function drawDirtTile(x, y) {
@@ -287,21 +308,13 @@ function drawBrickTile(x, y) {
   ctx.fillRect(x + 1, y + 5, TILE - 2, 4);
 }
 function drawExit(x, y, w, h) {
-  ctx.fillStyle = '#1b2c50';
+  // Door resting on the floor with simple frame
+  ctx.fillStyle = '#0f2541';
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = '#3d5aa6';
+  ctx.fillStyle = '#2f64c7';
   ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
-  // arrow
-  ctx.fillStyle = '#98f5ff';
-  ctx.fillRect(x + w / 2 - 2, y + h - 8, 4, 4);
-  ctx.fillRect(x + w / 2 - 4, y + h - 12, 8, 4);
-  ctx.fillRect(x + w / 2 - 6, y + h - 16, 12, 4);
-}
-function drawEntrance(x, y) {
-  ctx.fillStyle = '#222';
-  ctx.fillRect(x, y, 16, 20);
-  ctx.fillStyle = '#4ee2a6';
-  ctx.fillRect(x + 3, y + 3, 10, 3);
+  ctx.fillStyle = '#7aa7ff';
+  ctx.fillRect(x + 2, y + h - 5, w - 4, 2);
 }
 
 function drawLoochie(l) {
@@ -314,12 +327,13 @@ function drawLoochie(l) {
 
   // choose sprite
   if (sprites.loaded) {
+    const c = l.state === 'block' ? sprites.canvases.blocker : sprites.canvases.walker;
     const crop = l.state === 'block' ? sprites.crops.blocker : sprites.crops.walker;
     // simple bob animation for walker
     let bob = 0;
     if (l.state !== 'block') bob = Math.sin((l.frame % 60) / 60 * Math.PI * 2) > 0 ? 0 : 1;
-    // desired on-screen size around 36-40px tall
-    const destH = 38 + bob;
+    // desired on-screen size around 30-32px tall
+    const destH = 30 + bob;
     const aspect = crop.sw / crop.sh;
     const destW = Math.round(destH * aspect);
     const dx = Math.round(px - destW / 2);
@@ -329,9 +343,9 @@ function drawLoochie(l) {
       ctx.translate(px, 0);
       ctx.scale(-1, 1);
       ctx.translate(-px, 0);
-      ctx.drawImage(sprites.img, crop.sx, crop.sy, crop.sw, crop.sh, Math.round(px - (px - dx) - destW), dy, destW, destH);
+      ctx.drawImage(c, 0, 0, crop.sw, crop.sh, Math.round(px - (px - dx) - destW), dy, destW, destH);
     } else {
-      ctx.drawImage(sprites.img, crop.sx, crop.sy, crop.sw, crop.sh, dx, dy, destW, destH);
+      ctx.drawImage(c, 0, 0, crop.sw, crop.sh, dx, dy, destW, destH);
     }
     ctx.restore();
   } else {
@@ -435,7 +449,7 @@ function draw() {
   // HUD overlay inside canvas: exit and spawn labels
   ctx.fillStyle = '#fff';
   ctx.font = '8px monospace';
-  ctx.fillText('EXIT', level1.exit.x + level1.exit.w + 4, level1.exit.y + 10);
+  ctx.fillText('EXIT', level1.exit.x + level1.exit.w + 4, level1.exit.y + 12);
 }
 
 function setupLevel() {
