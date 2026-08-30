@@ -3,7 +3,6 @@ name: Deploy static site to Pages
 on:
   push:
     branches: [ main ]
-  pull_request:
 
 permissions:
   contents: read
@@ -31,6 +30,4 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          preview: ${{ github.event_name == 'pull_request' }}
 
