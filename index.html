@@ -47,15 +47,27 @@
       }
       #hud {
         display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: 8px;
+        grid-template-columns: 1fr;
+        gap: 6px;
         padding: env(safe-area-inset-bottom) 12px 12px 12px;
-        background: rgba(0,0,0,0.8);
+        background: rgba(0,0,0,0.85);
         color: #fff;
         font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
         font-size: 16px;
         line-height: 40px;
         user-select: none;
+      }
+      #hudTop {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      #jobBar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
       }
       .btn {
         display: inline-flex;
@@ -72,6 +84,8 @@
         box-shadow: 0 2px 0 #083;
         touch-action: manipulation;
       }
+      .btn.job { background:#2a2a2a; border-color:#666; box-shadow:0 2px 0 #222; }
+      .btn.selected { outline:3px solid #0e5; }
       .btn.secondary {
         background: #444;
         border-color: #777;
@@ -91,12 +105,24 @@
         <canvas id="screen" aria-label="Loochies game"></canvas>
       </div>
       <div id="hud">
-        <div id="status">Loading…</div>
-        <button id="blockerBtn" class="btn" aria-pressed="false" aria-label="Select Blocker">Blocker ×<span id="blockerCount">5</span></button>
-        <button id="restartBtn" class="btn secondary" aria-label="Restart level">Restart</button>
+        <div id="hudTop">
+          <div id="status">Loading…</div>
+          <div>
+            <button id="restartBtn" class="btn secondary" aria-label="Restart level">Restart</button>
+            <button id="nextBtn" class="btn secondary" aria-label="Next level">Next</button>
+            <button id="selectBtn" class="btn secondary" aria-label="Level select">Levels</button>
+          </div>
+        </div>
+        <div id="jobBar">
+          <button id="blockerBtn" class="btn job" aria-pressed="false" aria-label="Select Blocker">Blocker ×<span id="blockerCount">0</span></button>
+          <button id="builderBtn" class="btn job" aria-pressed="false" aria-label="Select Builder">Builder ×<span id="builderCount">0</span></button>
+          <button id="diggerBtn" class="btn job" aria-pressed="false" aria-label="Select Digger">Digger ×<span id="diggerCount">0</span></button>
+          <button id="basherBtn" class="btn job" aria-pressed="false" aria-label="Select Basher">Basher ×<span id="basherCount">0</span></button>
+          <button id="floaterBtn" class="btn job" aria-pressed="false" aria-label="Select Floater">Floater ×<span id="floaterCount">0</span></button>
+        </div>
       </div>
     </div>
-    <script type="module" src="src/main.js?v=7"></script>
+    <script type="module" src="src/main.js?v=8"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
