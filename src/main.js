@@ -6,6 +6,7 @@ const VIRTUAL_H = 180;
 const TILE = 16;
 
 const canvas = document.getElementById('screen');
+const stage = document.getElementById('stage');
 const hudStatus = document.getElementById('status');
 const blockerBtn = document.getElementById('blockerBtn');
 const blockerCountEl = document.getElementById('blockerCount');
@@ -34,13 +35,23 @@ restartBtn.addEventListener('click', () => setupLevel());
 // Integer scaling to fill screen while staying crisp
 function fitCanvas() {
   const dpr = window.devicePixelRatio || 1;
-  const scaleX = Math.floor(window.innerWidth / VIRTUAL_W) || 1;
-  const scaleY = Math.floor((window.innerHeight - 56) / VIRTUAL_H) || 1; // leave HUD
-  const scale = Math.max(1, Math.min(scaleX, scaleY));
-  canvas.width = VIRTUAL_W * scale * dpr;
-  canvas.height = VIRTUAL_H * scale * dpr;
-  canvas.style.width = `${VIRTUAL_W * scale}px`;
-  canvas.style.height = `${VIRTUAL_H * scale}px`;
+  const vv = window.visualViewport;
+  const vw = Math.floor((vv ? vv.width : window.innerWidth));
+  const vh = Math.floor((vv ? vv.height : window.innerHeight));
+  const hud = document.getElementById('hud');
+  const hudH = Math.ceil(hud.getBoundingClientRect().height);
+  const availW = vw;
+  const availH = vh - hudH;
+  stage.style.width = `${availW}px`;
+  stage.style.height = `${availH}px`;
+  let scale = Math.floor(Math.min(availW / VIRTUAL_W, availH / VIRTUAL_H));
+  if (scale < 1) scale = Math.min(availW / VIRTUAL_W, availH / VIRTUAL_H);
+  const cssW = VIRTUAL_W * scale;
+  const cssH = VIRTUAL_H * scale;
+  canvas.width = Math.round(VIRTUAL_W * scale * dpr);
+  canvas.height = Math.round(VIRTUAL_H * scale * dpr);
+  canvas.style.width = `${cssW}px`;
+  canvas.style.height = `${cssH}px`;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
@@ -48,6 +59,9 @@ function fitCanvas() {
 }
 let ctx = fitCanvas();
 window.addEventListener('resize', () => (ctx = fitCanvas()));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => (ctx = fitCanvas()));
+}
 
 // ---- Sprites: 3 columns x 2 rows sheet (top: walker, blocker, builder; bottom: digger, basher, floater)
 const sprites = {
