@@ -492,9 +492,10 @@ function updateLoochie(l, dt) {
           l.buildData.progress = 0;
           const i = l.buildData.stepsMade || 0;
           const tx = l.buildData.startTx + i * (l.dir>0?1:-1);
-          const ty = l.buildData.startTy - i;
+          const ty = l.buildData.startTy; // stay at floor height for bridging
           if (tx>0 && tx<level.width-1 && ty>0 && ty<level.height-2) {
-            level.map[ty][tx] = 1; // place dirt step
+            level.map[ty][tx] = 1; // top floor row
+            if (ty+1 < level.height) level.map[ty+1][tx] = 1; // fill subfloor for look
           }
           l.buildData.stepsMade = i + 1;
           if (l.buildData.stepsMade >= l.buildData.total) {
@@ -721,7 +722,7 @@ function onPointer(e) {
     } else if (tool === 'builder' && state.jobCounts.builder>0) {
       target.state = 'build';
       const startTx = Math.floor(target.x / TILE) + (target.dir>0?1:-1);
-      const startTy = Math.floor(target.y / TILE) - 1;
+      const startTy = Math.floor(target.y / TILE); // floor row at feet
       target.buildData = { startTx, startTy, total:7, stepsMade:0, progress:0 };
       spend('builder');
     } else if (tool === 'digger' && state.jobCounts.digger>0) {
