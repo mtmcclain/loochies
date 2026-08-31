@@ -330,7 +330,7 @@ function level_Floater() {
   addFloor(lv); addWalls(lv);
   // High ledge on left
   for (let x=2;x<8;x++){ lv.map[lv.height-6][x]=1; lv.map[lv.height-7][x]=1; }
-  const exit = { x: 20*TILE, y:(lv.height-2)*TILE - 2*TILE, w:TILE,h:2*TILE };
+  const exit = { x: (lv.width-2)*TILE, y:(lv.height-2)*TILE - 2*TILE, w:TILE,h:2*TILE };
   return {
     name:'Level 2 – Floater', ...lv,
     spawn:{ x:3*TILE+8, y:(lv.height-7)*TILE-1 },
@@ -361,7 +361,7 @@ function level_Basher() {
   // Brick wall
   const wx = 14;
   for (let y=lv.height-6;y<lv.height-2;y++){ lv.map[y][wx]=2; lv.map[y][wx+1]=2; }
-  const exit = { x: 22*TILE, y:(lv.height-2)*TILE - 2*TILE, w:TILE,h:2*TILE };
+  const exit = { x: (lv.width-2)*TILE, y:(lv.height-2)*TILE - 2*TILE, w:TILE,h:2*TILE };
   return {
     name:'Level 4 – Basher', ...lv,
     spawn:{ x:3*TILE+8, y:(lv.height-2)*TILE-1 },
@@ -796,7 +796,11 @@ function draw() {
   // HUD overlay inside canvas: exit and spawn labels
   ctx.fillStyle = '#fff';
   ctx.font = '8px monospace';
-  ctx.fillText('EXIT', level.exit.x + level.exit.w + 4, level.exit.y + 12);
+  const label = 'EXIT';
+  const tw = ctx.measureText(label).width;
+  let lx = level.exit.x + level.exit.w + 4;
+  if (lx + tw > VIRTUAL_W - 2) lx = level.exit.x - 2 - tw; // keep on screen
+  ctx.fillText(label, lx, level.exit.y + 12);
 }
 
 function setupLevel() {

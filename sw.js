@@ -1,8 +1,8 @@
 /* Loochies Service Worker
- * v10: bump cache, network-first for HTML/JS, never cache sw.js
+ * v11: bump cache, network-first for HTML/JS, never cache sw.js
  *     Runtime-cache sound files when they exist.
  */
-const CACHE_NAME = 'loochies-v10';
+const CACHE_NAME = 'loochies-v11';
 const OFFLINE_URLS = [
   './',
   './index.html',
